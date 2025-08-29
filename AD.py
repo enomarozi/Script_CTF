@@ -1,51 +1,39 @@
 from flask import Flask, request, jsonify
-import subprocess
-import json
+from pyad import aduser
+import pythoncom
 
 app = Flask(__name__)
 
-@app.route('/index', methods=['GET'])
+@app.route('/enomarozi', methods=['GET'])
 def testing():
     return "enomarozi"
 
 @app.route('/postdata', methods=['POST'])
 def postdata():
+    pythoncom.CoInitialize()
     username = request.get_json()['username']
-    setPassword = check_password(username)
-    return jsonify({"message":setPassword})
-    
-def check_password(username):
-    ps_command = f"Get-ADUser -Identity {username} -Properties PasswordLastSet | Select-Object SamAccountName, PasswordLastSet | ConvertTo-Json"
-    result = subprocess.run(
-        ["powershell","-Command",ps_command],
-        capture_output=True,
-        text=True
-    )
-    if result.returncode == 0:
-        output = result.stdout.strip()
-        data = json.loads(output)
-        return data['PasswordLastSet']
+    user = checkUser(username)
+    user_account_control = user.get_attribute("userAccountControl")[0]
+    if user_account_control != 512:
+        return jsonify({"message": None})
     else:
-        return "User tidak ditemukan"
+        return jsonify({"message":"Success"})
 
 @app.route('/change-password', methods=['POST'])
 def change_password():
+    pythoncom.CoInitialize()
     data = request.get_json()
-    username, password = data["username"].split('@')[0], data["password"]
-    setPassword = action_change_password(username,password)
-    return jsonify({"message":setPassword})
-    
-def action_change_password(username,password):
-    ps_command = f"Set-ADAccountPassword -Identity '{username}' -NewPassword (ConvertTo-SecureString -AsPlainText '{password}' -Force) -Reset"
-    result = subprocess.run(
-        ["powershell","-Command",ps_command],
-        capture_output=True,
-        text=True
-    )
-    if result.returncode == 0:
-        return "Success"
-    else:
-        return "Error"
-    
+    username, password = data["username"], data["password"]
+    user = checkUser(username)
+    user.set_password(password)
+    return jsonify({"message":"Success"})
+
+def checkUser(username):
+    try:
+        user = aduser.ADUser.from_cn(username)
+        return user
+    except:
+        return jsonify({"message":"User tidak ada"})
+        
 if __name__ == '__main__':
     app.run(host='10.208.1.14',port=80,debug=True)
