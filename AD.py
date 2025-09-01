@@ -1,39 +1,51 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from pyad import aduser
 import pythoncom
 
-app = Flask(__name__)
+app = FastAPI()
 
-@app.route('/enomarozi', methods=['GET'])
-def testing():
+class UserRequest(BaseModel):
+    username: str
+
+class ChangePasswordRequest(BaseModel):
+    username: str
+    password: str
+
+@app.get("/enomarozi")
+async def testing():
     return "enomarozi"
 
-@app.route('/postdata', methods=['POST'])
-def postdata():
+@app.post("/postdata")
+async def postdata(request: UserRequest):
     pythoncom.CoInitialize()
-    username = request.get_json()['username']
-    user = checkUser(username)
-    user_account_control = user.get_attribute("userAccountControl")[0]
-    if user_account_control != 512:
-        return jsonify({"message": None})
-    else:
-        return jsonify({"message":"Success"})
+    try:
+        user = check_user(request.username)
+        user_account_control = user.get_attribute("userAccountControl")[0]
+        if user_account_control != 512:
+            return {"message": None}
+        else:
+            return {"message": "Success"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.route('/change-password', methods=['POST'])
-def change_password():
+@app.post("/change-password")
+async def change_password(request: ChangePasswordRequest):
     pythoncom.CoInitialize()
-    data = request.get_json()
-    username, password = data["username"], data["password"]
-    user = checkUser(username)
-    user.set_password(password)
-    return jsonify({"message":"Success"})
+    try:
+        user = check_user(request.username)
+        user.set_password(request.password)
+        return {"message": "Success"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-def checkUser(username):
+def check_user(username: str):
     try:
         user = aduser.ADUser.from_cn(username)
         return user
-    except:
-        return jsonify({"message":"User tidak ada"})
-        
-if __name__ == '__main__':
-    app.run(host='10.208.1.14',port=80,debug=True)
+    except Exception:
+        raise ValueError("User tidak ada")
